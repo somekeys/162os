@@ -4,3 +4,5 @@
 *~
 .DS_Store
 pintos/**/build
+pintos/**/tags
+pintos/**/compile_commands.json
