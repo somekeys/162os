@@ -7,6 +7,17 @@
 #include "threads/synch.h"
 #include "threads/fixed-point.h"
 
+/* priority craft */
+bool less_priority(struct list_elem *a, struct list_elem *b, void *aux);
+
+struct donator
+    {
+        int num;
+        int NULL_num;
+        int max_num;
+        struct list** donator_lists;
+    };
+
 /* States in a thread's life cycle. */
 enum thread_status
   {
@@ -95,6 +106,8 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
+    struct donator donator_groups;
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
@@ -104,6 +117,18 @@ struct thread
     unsigned magic;                     /* Detects stack overflow. */
   };
 
+/* timer_sleep craft*/
+void check_sleep(void);
+struct sleep_list_elem
+    {
+        struct thread* sleeping_thread;
+        int ticks;                      /* Ticks the thread should slepp */
+        int start_ticks;            /* ticks number when the thread start sleeping*/
+        struct list_elem elem;
+
+    };
+
+int get_priority(struct thread*);
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
@@ -139,5 +164,6 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+struct thread *running_thread(void);
 
 #endif /* threads/thread.h */

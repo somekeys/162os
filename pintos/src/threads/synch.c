@@ -31,6 +31,7 @@
 #include <string.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/malloc.h"
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
@@ -198,6 +199,13 @@ lock_acquire (struct lock *lock)
 
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
+  struct donator* d = &lock->holder->donator_groups;
+  if( (d->max_num - d->num) < 2){
+    d->max_num += 4;
+  d -> donator_lists = realloc(d -> donator_lists, (d->num+4) * sizeof(struct list*));
+  }
+  d ->donator_lists[d->num++] = &lock->semaphore.waiters;
+      
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -220,6 +228,28 @@ lock_try_acquire (struct lock *lock)
   return success;
 }
 
+static void
+check_donator(struct donator *d){
+    
+    if( (d->NULL_num << 2) / (d->num+1) >= 2){
+        int i = d ->num;
+        d->num =0;
+
+        struct list** new_list = malloc( (i - d->NULL_num +4) * sizeof(struct list*) );
+        
+        while(--i >=0){
+            if(d->donator_lists [i]){
+                new_list[d->num++] = d -> donator_lists[i];
+            }else{
+                d -> NULL_num --;
+            }
+        }
+        d -> donator_lists = new_list;
+        d->max_num = d->num + 4;
+        ASSERT(d->NULL_num == 0);
+    }
+            
+}
 /* Releases LOCK, which must be owned by the current thread.
 
    An interrupt handler cannot acquire a lock, so it does not
@@ -230,6 +260,18 @@ lock_release (struct lock *lock)
 {
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
+ 
+  // set corresponding donator list to NULL 
+  struct donator *d = &lock->holder->donator_groups;
+  int i;
+  for(i=0; i< d -> num; i++){
+      if(d->donator_lists[i] == &lock->semaphore.waiters){
+          d ->donator_lists[i] = NULL;
+          d ->NULL_num ++;
+          break;
+      }
+  }
+  check_donator(d);
 
   lock->holder = NULL;
   sema_up (&lock->semaphore);

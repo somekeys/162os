@@ -8,6 +8,7 @@
 #include "threads/palloc.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/interrupt.h"
 
 /* A simple implementation of malloc().
 
@@ -118,9 +119,7 @@ malloc (size_t size)
       a->free_cnt = page_cnt;
       return a + 1;
     }
-
   lock_acquire (&d->lock);
-
   /* If the free list is empty, create a new arena. */
   if (list_empty (&d->free_list))
     {
@@ -149,7 +148,6 @@ malloc (size_t size)
   b = list_entry (list_pop_front (&d->free_list), struct block, free_elem);
   a = block_to_arena (b);
   a->free_cnt--;
-  lock_release (&d->lock);
   return b;
 }
 
