@@ -9,6 +9,7 @@
 
 /* priority craft */
 bool less_priority(struct list_elem *a, struct list_elem *b, void *aux);
+bool donation;
 
 struct donator
     {

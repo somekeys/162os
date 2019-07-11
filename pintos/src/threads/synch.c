@@ -32,6 +32,7 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/malloc.h"
+#include "threads/palloc.h"
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
@@ -199,12 +200,14 @@ lock_acquire (struct lock *lock)
 
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
+  if(donation){
   struct donator* d = &lock->holder->donator_groups;
   if( (d->max_num - d->num) < 2){
     d->max_num += 4;
-  d -> donator_lists = realloc(d -> donator_lists, (d->num+4) * sizeof(struct list*));
+    d -> donator_lists = realloc(d -> donator_lists, (d->num+4) * sizeof(struct list*));
   }
   d ->donator_lists[d->num++] = &lock->semaphore.waiters;
+  }
       
 }
 
