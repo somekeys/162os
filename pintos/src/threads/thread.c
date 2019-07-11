@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -19,6 +20,7 @@
    Used to detect stack overflow.  See the big comment at the top
    of thread.h for details. */
 #define THREAD_MAGIC 0xcd6abf4b
+#define INITI_NUM 100
 
 struct list sleep_list;
 bool donation;
@@ -96,6 +98,7 @@ thread_init (void)
   list_init (&ready_list);
   list_init (&all_list);
   list_init(&sleep_list);
+  
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -109,6 +112,10 @@ thread_init (void)
 void
 thread_start (void)
 {
+  running_thread()->donator_groups.donator_lists = malloc(sizeof(struct list*) * INITI_NUM);
+  memset(running_thread()->donator_groups.donator_lists,0, sizeof(struct list*) *  INITI_NUM); 
+  running_thread()->donator_groups.max_num = INITI_NUM;
+
   /* Create the idle thread. */
   struct semaphore idle_started;
   sema_init (&idle_started, 0);
@@ -187,6 +194,10 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
+  t->donator_groups.donator_lists = malloc(sizeof(struct list*) * INITI_NUM);
+  memset(t->donator_groups.donator_lists,0, sizeof(struct list*) * INITI_NUM); 
+  t->donator_groups.max_num= INITI_NUM;
+  
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
   kf->eip = NULL;
@@ -520,11 +531,14 @@ bool less_priority(struct list_elem *a, struct list_elem *b, UNUSED void *aux){
 static struct thread *
 next_thread_to_run (void)
 {
-  if (list_empty (&ready_list))
+  if (list_empty (&ready_list)){
     return idle_thread;
-  else
-     // return list_entry (list_max(&ready_list,(list_less_func *)&less_priority,NULL),struct thread, elem);
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  }else{
+      struct list_elem* l = list_max(&ready_list,(list_less_func *)&less_priority,NULL);
+      list_remove(l);
+      return list_entry (l,struct thread, elem);
+//    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+    }
 }
 
 /* Completes a thread switch by activating the new thread's page

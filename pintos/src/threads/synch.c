@@ -202,10 +202,11 @@ lock_acquire (struct lock *lock)
   lock->holder = thread_current ();
   if(donation){
   struct donator* d = &lock->holder->donator_groups;
-  if( (d->max_num - d->num) < 2){
-    d->max_num += 4;
-    d -> donator_lists = realloc(d -> donator_lists, (d->num+4) * sizeof(struct list*));
+  if( (d->max_num - d->num) < 3){
+    d->max_num += 5;
+    d -> donator_lists = realloc(d -> donator_lists, (d->num+5) * sizeof(struct list*));
   }
+  barrier();
   d ->donator_lists[d->num++] = &lock->semaphore.waiters;
   }
       
@@ -265,6 +266,7 @@ lock_release (struct lock *lock)
   ASSERT (lock_held_by_current_thread (lock));
  
   // set corresponding donator list to NULL 
+  if(donation){
   struct donator *d = &lock->holder->donator_groups;
   int i;
   for(i=0; i< d -> num; i++){
@@ -274,8 +276,8 @@ lock_release (struct lock *lock)
           break;
       }
   }
-  check_donator(d);
-
+  //check_donator(d);
+  }
   lock->holder = NULL;
   sema_up (&lock->semaphore);
 }

@@ -148,6 +148,7 @@ malloc (size_t size)
   b = list_entry (list_pop_front (&d->free_list), struct block, free_elem);
   a = block_to_arena (b);
   a->free_cnt--;
+  lock_release (&d->lock);
   return b;
 }
 
