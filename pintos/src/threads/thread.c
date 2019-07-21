@@ -11,7 +11,6 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
-#include "threads/malloc.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -20,11 +19,7 @@
    Used to detect stack overflow.  See the big comment at the top
    of thread.h for details. */
 #define THREAD_MAGIC 0xcd6abf4b
-#define INITI_NUM 100
 
-struct list sleep_list;
-bool donation;
-int get_prority(struct thread*);
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
@@ -67,7 +62,7 @@ bool thread_mlfqs;
 static void kernel_thread (thread_func *, void *aux);
 
 static void idle (void *aux UNUSED);
-struct thread *running_thread (void);
+static struct thread *running_thread (void);
 static struct thread *next_thread_to_run (void);
 static void init_thread (struct thread *, const char *name, int priority);
 static bool is_thread (struct thread *) UNUSED;
@@ -97,8 +92,6 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
-  list_init(&sleep_list);
-  
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -112,10 +105,6 @@ thread_init (void)
 void
 thread_start (void)
 {
-  running_thread()->donator_groups.donator_lists = malloc(sizeof(struct list*) * INITI_NUM);
-  memset(running_thread()->donator_groups.donator_lists,0, sizeof(struct list*) *  INITI_NUM); 
-  running_thread()->donator_groups.max_num = INITI_NUM;
-
   /* Create the idle thread. */
   struct semaphore idle_started;
   sema_init (&idle_started, 0);
@@ -194,10 +183,6 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
-  t->donator_groups.donator_lists = malloc(sizeof(struct list*) * INITI_NUM);
-  memset(t->donator_groups.donator_lists,0, sizeof(struct list*) * INITI_NUM); 
-  t->donator_groups.max_num= INITI_NUM;
-  
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
   kf->eip = NULL;
@@ -357,7 +342,7 @@ thread_set_priority (int new_priority)
 int
 thread_get_priority (void)
 {
-  return get_prority(thread_current ());
+  return thread_current ()->priority;
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -496,32 +481,6 @@ alloc_frame (struct thread *t, size_t size)
   t->stack -= size;
   return t->stack;
 }
-int get_prority(struct thread* t){
-    struct donator* d = &t -> donator_groups; 
-    int pr = t -> priority;
-    int i;
-    for(i =0;i< d->num;i++){
-        struct list* ds = (d->donator_lists)[i];
-        struct list_elem* e;
-      
-        if(ds){ 
-            for( e = list_begin(ds); e != list_end(ds); e =list_next(e) ){
-                pr += get_prority(list_entry(e, struct thread, elem)) ;
-            }
-        }
-    
-    }
-
-    return pr;
-
-
-}
-bool less_priority(struct list_elem *a, struct list_elem *b, UNUSED void *aux){
-   struct  thread* A = list_entry(a, struct thread, elem);
-   struct  thread* B = list_entry(b, struct thread, elem);
-   
-   return get_prority(A) < get_prority(B);
-}
 
 /* Chooses and returns the next thread to be scheduled.  Should
    return a thread from the run queue, unless the run queue is
@@ -531,14 +490,10 @@ bool less_priority(struct list_elem *a, struct list_elem *b, UNUSED void *aux){
 static struct thread *
 next_thread_to_run (void)
 {
-  if (list_empty (&ready_list)){
+  if (list_empty (&ready_list))
     return idle_thread;
-  }else{
-      struct list_elem* l = list_max(&ready_list,(list_less_func *)&less_priority,NULL);
-      list_remove(l);
-      return list_entry (l,struct thread, elem);
-//    return list_entry (list_pop_front (&ready_list), struct thread, elem);
-    }
+  else
+    return list_entry (list_pop_front (&ready_list), struct thread, elem);
 }
 
 /* Completes a thread switch by activating the new thread's page
@@ -587,28 +542,6 @@ thread_schedule_tail (struct thread *prev)
     }
 }
 
-void check_sleep(){
-    
- ASSERT (intr_get_level () == INTR_OFF);
- struct list_elem* e = list_begin(&sleep_list);
- for(; e != list_end(&sleep_list);
-            e = list_next(e)){
-        extern int64_t timer_elapsed(int64_t);
-        extern void free(void *);
-        extern struct list sleep_pool;
-        
-        struct sleep_list_elem *s = list_entry(e, struct sleep_list_elem, elem);
-        
-        if(timer_elapsed(s -> start_ticks) >= (s -> ticks) ){
-            struct list_elem* cur = e;
-            e = list_prev(e);
-            list_remove(cur);
-            thread_unblock(s -> sleeping_thread);
-            list_push_back(&sleep_pool, cur);
-        }
-    }
-}
-
 /* Schedules a new process.  At entry, interrupts must be off and
    the running process's state must have been changed from
    running to some other state.  This function finds another
@@ -619,7 +552,6 @@ void check_sleep(){
 static void
 schedule (void)
 {
-    check_sleep();
   struct thread *cur = running_thread ();
   struct thread *next = next_thread_to_run ();
   struct thread *prev = NULL;

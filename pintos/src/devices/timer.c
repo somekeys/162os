@@ -7,9 +7,6 @@
 #include "threads/interrupt.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
-#include "threads/malloc.h"
-#include "threads/thread.h"
-#include "lib/kernel/list.h"
 
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -26,7 +23,7 @@ static int64_t ticks;
 /* Number of loops per timer tick.
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
-struct list sleep_pool = LIST_INITIALIZER (sleep_pool) ;
+
 static intr_handler_func timer_interrupt;
 static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
@@ -90,36 +87,14 @@ timer_elapsed (int64_t then)
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void
-timer_sleep (int64_t ticks){
-    extern struct list sleep_list;
-    //extern struct thread* running_thread(void);
-    struct sleep_list_elem* cur; 
-    if(list_empty(&sleep_pool)){
-        cur = malloc(sizeof(struct sleep_list_elem));
-    }else{
-        cur = list_entry(list_pop_front(&sleep_pool), struct sleep_list_elem,elem );
-    }
+timer_sleep (int64_t ticks)
+{
+  int64_t start = timer_ticks ();
 
-    cur -> ticks = ticks;
-    cur -> start_ticks = timer_ticks();
-    cur -> sleeping_thread  = thread_current();
-
-    intr_disable();   
-    list_push_back(&sleep_list, &cur->elem);
-    thread_block();
-    
-    
-
+  ASSERT (intr_get_level () == INTR_ON);
+  while (timer_elapsed (start) < ticks)
+    thread_yield ();
 }
-
-/*
- *  int64_t start = timer_ticks ();
- *
- *  ASSERT (intr_get_level () == INTR_ON);
- *  while (timer_elapsed (start) < ticks)
- *    thread_yield ();
- */
-
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
    turned on. */
