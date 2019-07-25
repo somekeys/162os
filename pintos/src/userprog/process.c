@@ -48,6 +48,29 @@ process_execute (const char *file_name)
   return tid;
 }
 
+void push_arg(char* f_name, char** save, void** esp){
+    char* ptr = f_name;
+    char* s_ptr;
+    int count = 0;
+    do{
+        *esp -= strlen(ptr) + 1;
+        memcpy(*esp, ptr, strlen(ptr)+1);
+        count++;
+    } while( (ptr = strtok_r(NULL," ", save)) );
+    s_ptr = *esp;
+    *esp =(void *) ( (int)*esp & ~0x03 );// align
+    
+    int num = count;
+    for(;num > 0; num--){
+        *esp -= strlen(s_ptr)+1;
+        memcpy(*esp , s_ptr, strlen(s_ptr)+1);
+        while(s_ptr++);
+    }
+
+    *esp -= sizeof(int);
+    *((int*)(*esp))  = count;
+
+}
 /* A thread function that loads a user process and starts it
    running. */
 static void
@@ -62,13 +85,17 @@ start_process (void *file_name_)
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
+
+  char** save = NULL;
+  char* f_name = strtok_r(file_name," ",save);
+  success = load (f_name, &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success)
     thread_exit ();
 
+  push_arg(f_name, save, &if_.esp);
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
