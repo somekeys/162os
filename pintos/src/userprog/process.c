@@ -49,6 +49,7 @@ process_execute (const char *file_name)
 }
 
 void push_arg(char* f_name, char** save, void** esp){
+    ASSERT(f_name);
     char* ptr = f_name;
     char* s_ptr;
     int count = 0;
@@ -61,14 +62,26 @@ void push_arg(char* f_name, char** save, void** esp){
     *esp =(void *) ( (int)*esp & ~0x03 );// align
     
     int num = count;
-    for(;num > 0; num--){
-        *esp -= strlen(s_ptr)+1;
-        memcpy(*esp , s_ptr, strlen(s_ptr)+1);
-        while(s_ptr++);
-    }
+    *esp -= sizeof(char*);
+    *((char**)*esp) = NULL;
 
+    for(;num > 0; num--){
+        *esp -= sizeof(s_ptr);
+        *((char**)*esp) = s_ptr;
+//       printf("argv[%d]: %s\n",num-1, **esp);
+        while(*(s_ptr++));
+    }
+    //argv**
+    *esp -= sizeof(char**);
+    *((char***)(*esp))= *esp + sizeof(char**);
+    
+    //argc
     *esp -= sizeof(int);
     *((int*)(*esp))  = count;
+
+    //return address
+    *esp -= sizeof(int);
+    *((int*)(*esp)) = 0;
 
 }
 /* A thread function that loads a user process and starts it
@@ -86,22 +99,24 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
 
-  char** save = NULL;
-  char* f_name = strtok_r(file_name," ",save);
-  success = load (f_name, &if_.eip, &if_.esp);
+  char* save = NULL;
+  char* f_name = strtok_r(file_name," ",&save);
+  if ( (success = load (f_name, &if_.eip, &if_.esp)) ){
+    push_arg(f_name, &save, &if_.esp);
+  }
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success)
     thread_exit ();
 
-  push_arg(f_name, save, &if_.esp);
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
      arguments on the stack in the form of a `struct intr_frame',
      we just point the stack pointer (%esp) to our stack frame
      and jump to it. */
+  //hex_dump(if_.esp,if_.esp,50,true);
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
 }
