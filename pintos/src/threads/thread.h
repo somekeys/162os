@@ -98,8 +98,13 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    struct process* p;
+    struct list child_list;
+    struct thread* parent;
+    struct lock child_list_lock;
+    struct file* exec_file; 
 #endif
-
+    int exit_code;
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };

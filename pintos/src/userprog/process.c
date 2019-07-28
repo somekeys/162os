@@ -18,8 +18,9 @@
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
-
+#ifdef USERPROG
 static struct semaphore temporary;
+static struct lock wait_lock;
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
@@ -32,7 +33,8 @@ process_execute (const char *file_name)
 {
   char *fn_copy;
   tid_t tid;
-
+  
+  lock_init(&wait_lock);
   sema_init (&temporary, 0);
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
@@ -121,6 +123,22 @@ start_process (void *file_name_)
   NOT_REACHED ();
 }
 
+static struct process*
+get_child(struct thread* t, pid_t pid){
+    lock_acquire(&t->child_list_lock);
+    struct list_elem *e;
+    struct process *p; 
+
+      for (e = list_begin (&t->child_list); e != list_end (&t->child_list);
+           e = list_next (e))
+        {
+          p = list_entry (e, struct process, elem);
+          if(p->pid != pid)  p =NULL; 
+        }
+      lock_release(&t->child_list_lock);
+      return p;
+    
+}
 /* Waits for thread TID to die and returns its exit status.  If
    it was terminated by the kernel (i.e. killed due to an
    exception), returns -1.  If TID is invalid or if it was not a
@@ -133,8 +151,20 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED)
 {
-  sema_down (&temporary);
-  return 0;
+    struct thread* t = running_thread();
+    struct process* p = get_child(t,child_tid);
+    lock_acquire(&lock_wait);
+    if(p==NULL||p->waiting) {
+        lock_release(&lock_wait);
+        return -1;
+    
+    p->waiting = true;
+    lock_release(&lock_wait);
+    sema_down(&p->wait);
+    int exit_code  = p->exit_code;
+    list_remove(&p->elem);
+    free(p);
+  return exit_code;
 }
 
 /* Free the current process's resources. */
@@ -142,8 +172,10 @@ void
 process_exit (void)
 {
   struct thread *cur = thread_current ();
+  struct process *p = cur->p;
   uint32_t *pd;
-
+    
+  file_allow_write(cur->exec_file);
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -160,7 +192,8 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
-  sema_up (&temporary);
+  printf("%s: exit(%d)\n", cur->name, p->exit_code);
+  sema_up (&p->wait);
 }
 
 /* Sets up the CPU for running user code in the current
@@ -356,6 +389,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
   *eip = (void (*) (void)) ehdr.e_entry;
 
   success = true;
+  t->exec_file = file;
+  file_deny_write(file);
 
  done:
   /* We arrive here whether the load is successful or not. */
@@ -510,3 +545,4 @@ install_page (void *upage, void *kpage, bool writable)
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
+#endif
