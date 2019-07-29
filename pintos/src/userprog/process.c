@@ -168,7 +168,6 @@ process_wait (tid_t child_tid UNUSED)
     list_remove(&p->elem);
     lock_release(&t->child_list_lock);
     free(p);
-    t->p = NULL;
   return exit_code;
 
 }
