@@ -189,8 +189,9 @@ thread_create (const char *name, int priority,
   list_push_back(&t->parent->child_list, &t->p->elem);
   lock_release(&t->parent->child_list_lock);
   t->p->pid = tid;
-  sema_ini(&t->p->wait,0);
+  sema_init(&t->p->wait,0);
   t->p->waiting = false;
+  t->p->t = t;
 #endif
   
   
@@ -479,6 +480,7 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init(&t->child_list);
   lock_init(&t->child_list_lock);
 #endif
+  list_init(&t->fd_map_list);
 
 
   old_level = intr_disable ();

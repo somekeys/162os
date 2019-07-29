@@ -104,6 +104,7 @@ struct thread
     struct lock child_list_lock;
     struct file* exec_file; 
 #endif
+    struct list fd_map_list;
     int exit_code;
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */

@@ -14,5 +14,6 @@ struct process{
     struct list_elem elem;
     struct semaphore  wait;
     bool waiting;
+    struct thread* t;
 };
 #endif /* userprog/process.h */

@@ -4,12 +4,16 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 #include "devices/shutdown.h"
 #include "userprog/process.h"
-#define KILL() thread_exit()
+#include "filesys/filesys.h"
+#include "filesys/file.h"
+#define KILL() sys_exit(-1)
 #define CHECK_GET(PTR,OFFSET,BYTEOFF) (get_user((uint8_t *) (((uint32_t*) PTR)+(OFFSET)) + BYTEOFF) != -1)
+#define BUF_MAX 512
 static struct lock file_lock;
-
+static void sys_exit(int err_code);
 static void syscall_handler (struct intr_frame *);
 
 /* Reads a byte at user virtual address UADDR.
@@ -58,6 +62,112 @@ check_string(char* str){
    
     return false;
 }
+static bool 
+check_buff(void* buff, int len){
+    do{
+        if(len<=0) return true;
+        len --;
+    }while(CHECK_GET(buff, 0,len));
+   
+    return false;
+}
+static bool
+sys_create(char* name, unsigned initial_size){
+    if(!check_string(name)) KILL();
+    bool s;
+    
+    lock_acquire(&file_lock);
+    s = filesys_create(name, initial_size);
+    lock_release(&file_lock);
+
+    return s;
+}
+
+static bool 
+sys_remove(char* name){
+    if(!check_string(name)) KILL();
+    bool s;
+    
+    lock_acquire(&file_lock);
+    s = filesys_remove(name);
+    lock_release(&file_lock);
+
+    return s;
+}
+
+static struct fd_map*
+get_fdmap(int fd){
+    struct list_elem *e;
+    struct list* l = &(thread_current()->fd_map_list);
+
+    for(e = list_begin(l);e != list_end(l); e = list_next(e)){
+        struct fd_map* fm = list_entry(e, struct fd_map, elem);
+        if(fm->fd == fd) return fm;
+    }
+    return NULL;
+
+}
+static int 
+sys_open(char* file){
+    if(!check_string(file)) KILL();
+    int fd = -1;
+    lock_acquire(&file_lock);
+    //try open file
+    struct file *f =filesys_open(file);
+    //if sucess
+    if(f){
+       fd = 1;
+       while(get_fdmap(++fd));
+       struct fd_map* fm = malloc(sizeof(struct fd_map));
+       fm->f =f;
+       fm->fd = fd;
+       list_push_front(&thread_current()->fd_map_list, &fm->elem);
+    }
+    lock_release(&file_lock);
+
+    return fd;
+}
+
+static int 
+sys_filesize(int fd){
+    lock_acquire(&file_lock);
+    int size = -1;
+    struct fd_map* fm = get_fdmap(fd);
+    if(fm){
+        size = file_length(fm->f);
+    }
+    lock_release(&file_lock);
+    return size;
+}
+
+static int 
+sys_write(int fd, void* buff,unsigned size){
+    if(!check_buff(buff,size)) KILL();
+
+    if(fd == STDOUT_FILENO){
+        int len =size;
+        char* buffer =  buff;
+        while(len > BUF_MAX){
+            putbuf((const char*)buffer, BUF_MAX);
+            len -= BUF_MAX;
+            buffer += BUF_MAX;
+        }
+        
+        putbuf((const char*)buffer, len);
+        return size;
+    } 
+
+    lock_acquire(&file_lock);
+    int ret = -1;
+    struct fd_map* fm = get_fdmap(fd);
+    if(fm){
+        ret = file_write(fm->f, buff, size);
+    }
+    lock_release(&file_lock);
+    if(ret==-1) KILL();
+    return ret;
+    
+}
 
 static int 
 sys_wait (tid_t pid){
@@ -86,7 +196,7 @@ sys_halt(){
 }
 
 static int sys_exec(const char* cmd_line){
-    if(!check_string(cmd_line)) KILL();
+    if(!check_string((char*)cmd_line)) KILL();
     return process_execute(cmd_line);
 }
 void
@@ -113,9 +223,26 @@ syscall_handler (struct intr_frame *f UNUSED)
           break;
     case SYS_EXEC:
           f->eax = sys_exec((char*)checked_get(args,1));
+          break;
     case SYS_WAIT:
           f->eax = sys_wait((tid_t)checked_get(args,1));
+          break;
+    case SYS_CREATE:
+          f->eax = sys_create((char*)checked_get(args,1), (unsigned) checked_get(args,2));
+          break;
+    case SYS_REMOVE:
+          f->eax = sys_remove((char*)checked_get(args,1));
+          break;
     case SYS_OPEN:
+          f->eax = sys_open((char*)checked_get(args,1));
+          break;
+    case SYS_FILESIZE:
+          f->eax = sys_filesize((int) checked_get(args,1));
+          break;
+    case SYS_WRITE:
+          f->eax = sys_write((int)checked_get(args,1), (void*)checked_get(args,2),
+                (unsigned)checked_get(args,3));  
+          break;
     default:
           printf("Calling system call: number %d\n", checked_get(args,0));
         
