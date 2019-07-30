@@ -8,6 +8,7 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
+#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -191,6 +192,7 @@ process_exit (void)
   uint32_t *pd;
     
   file_allow_write(cur->exec_file);
+  close_all_files(&cur->fd_map_list);
   file_close(cur->exec_file);
   free_children(cur);
   

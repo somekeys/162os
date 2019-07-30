@@ -6,6 +6,7 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "devices/shutdown.h"
+#include "devices/input.h"
 #include "userprog/process.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
@@ -16,6 +17,15 @@ static struct lock file_lock;
 static void sys_exit(int err_code);
 static void syscall_handler (struct intr_frame *);
 
+void 
+close_all_files(struct list* fl){
+    lock_acquire(&file_lock);
+   while(!list_empty(fl)){
+       struct list_elem* e = list_pop_front(fl);
+       free(list_entry(e, struct fd_map, elem));
+   }
+   lock_release(&file_lock);
+}
 /* Reads a byte at user virtual address UADDR.
  *    UADDR must be below PHYS_BASE.
  *       Returns the byte value if successful, -1 if a segfault
@@ -170,6 +180,69 @@ sys_write(int fd, void* buff,unsigned size){
 }
 
 static int 
+sys_read(int fd, void* buff, unsigned size){
+    if(!check_buff(buff,size)) KILL();
+    size_t i = 0;
+    struct fd_map *fm;
+    int ret = -1;
+
+    if (fd == STDIN_FILENO)
+        {
+         while (i++ < size){
+         if (!put_user (((uint8_t *) buff + i), (uint8_t) input_getc ())) KILL();
+         }
+            return i;
+        }
+
+    lock_acquire(&file_lock);
+    fm = get_fdmap(fd);
+    if(fm){
+        ret = file_read(fm->f, buff, size);
+    }
+    lock_release(&file_lock);
+    
+    if(ret == -1) KILL();
+    return ret;
+            
+}
+
+static void
+sys_seek(int fd, unsigned pos){
+    lock_acquire(&file_lock);
+    struct fd_map *fm = get_fdmap(fd);
+    if(fm){
+        file_seek(fm->f, pos);
+    }
+    lock_release(&file_lock);
+
+}
+
+static unsigned
+sys_tell(int fd){
+    unsigned pos = -1;
+    lock_acquire(&file_lock);
+    struct fd_map* fm = get_fdmap(fd);
+    if(fm){
+        pos = file_tell(fm->f);
+    }
+    lock_release(&file_lock);
+    return pos;
+}
+
+static void 
+sys_close(int fd){
+    
+    struct fd_map* fm;
+    lock_acquire(&file_lock);
+    fm = get_fdmap(fd);
+    if(fm){
+    list_remove(&fm->elem);
+    free(fm);
+    }
+    lock_release(&file_lock);
+
+}
+static int 
 sys_wait (tid_t pid){
     return process_wait(pid);
 }
@@ -191,7 +264,7 @@ sys_practice(int a){
 }
 
 static inline void 
-sys_halt(){
+sys_halt(void){
     shutdown_power_off();
 }
 
@@ -243,6 +316,18 @@ syscall_handler (struct intr_frame *f UNUSED)
           f->eax = sys_write((int)checked_get(args,1), (void*)checked_get(args,2),
                 (unsigned)checked_get(args,3));  
           break;
+    case SYS_READ:
+        f->eax = sys_read( (int)checked_get(args,1),(void*)checked_get(args,2), (int)checked_get(args,3) );
+         break; 
+    case SYS_SEEK:
+         sys_seek((int)checked_get(args,1),(unsigned)checked_get(args,2));
+         break;
+    case SYS_TELL:
+         f-> eax = sys_tell((int)checked_get(args,1));
+         break;
+    case SYS_CLOSE:
+         sys_close((int) checked_get(args,1));
+         break;
     default:
           printf("Calling system call: number %d\n", checked_get(args,0));
         
