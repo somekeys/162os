@@ -22,7 +22,9 @@ close_all_files(struct list* fl){
     lock_acquire(&file_lock);
    while(!list_empty(fl)){
        struct list_elem* e = list_pop_front(fl);
-       free(list_entry(e, struct fd_map, elem));
+       struct fd_map* fm = list_entry(e, struct fd_map, elem);
+       file_close(fm->f);
+       free(fm);
    }
    lock_release(&file_lock);
 }
@@ -109,7 +111,7 @@ static struct fd_map*
 get_fdmap(int fd){
     struct list_elem *e;
     struct list* l = &(thread_current()->fd_map_list);
-
+     
     for(e = list_begin(l);e != list_end(l); e = list_next(e)){
         struct fd_map* fm = list_entry(e, struct fd_map, elem);
         if(fm->fd == fd) return fm;
@@ -236,6 +238,7 @@ sys_close(int fd){
     lock_acquire(&file_lock);
     fm = get_fdmap(fd);
     if(fm){
+    file_close(fm->f);
     list_remove(&fm->elem);
     free(fm);
     }

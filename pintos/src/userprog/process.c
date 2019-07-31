@@ -24,6 +24,7 @@ static struct semaphore temporary;
 static struct lock wait_lock;
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+static struct process* get_child(struct thread* t, pid_t pid);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -33,6 +34,7 @@ tid_t
 process_execute (const char *file_name)
 {
   char *fn_copy;
+  char *fn;
   tid_t tid;
   
   lock_init(&wait_lock);
@@ -40,16 +42,32 @@ process_execute (const char *file_name)
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
+  fn = malloc(strlen(file_name)+1);;
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
+  strlcpy (fn, file_name, strlen(file_name)+1);
 
   char* save = NULL;
-  file_name = strtok_r((char*)file_name," ",&save);
+  file_name = strtok_r((char*)fn," ",&save);
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
+  free (fn);
+  
+   if (tid == TID_ERROR){
     palloc_free_page (fn_copy);
+  }else{
+
+   struct process *p = get_child(thread_current(),tid);
+  
+  if(p){
+    while(p->load_statu == LOADING){
+        sema_down(&p->load);
+    }
+    if(p->load_statu == LOAD_FAIL) tid = TID_ERROR;
+  }
+
+  }
   return tid;
 }
 
@@ -112,8 +130,11 @@ start_process (void *file_name_)
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success)
-    thread_exit ();
+  if (!success){
+    struct thread* t = thread_current();
+    if(t->p) t->p->exit_code = -1;
+    thread_current()->exit_code = -1;
+    thread_exit ();}
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -122,6 +143,7 @@ start_process (void *file_name_)
      we just point the stack pointer (%esp) to our stack frame
      and jump to it. */
   //hex_dump(if_.esp,if_.esp,50,true);
+  
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
 }
@@ -130,13 +152,13 @@ static struct process*
 get_child(struct thread* t, pid_t pid){
     lock_acquire(&t->child_list_lock);
     struct list_elem *e;
-    struct process *p; 
+    struct process *p = NULL; 
 
       for (e = list_begin (&t->child_list); e != list_end (&t->child_list);
            e = list_next (e))
         {
           p = list_entry (e, struct process, elem);
-          if(p->pid != pid)  p =NULL; 
+          if(p->pid == pid)  break; 
         }
       lock_release(&t->child_list_lock);
       return p;
@@ -190,10 +212,11 @@ process_exit (void)
   struct thread *cur = thread_current ();
   struct process *p = cur->p;
   uint32_t *pd;
-    
+  if(cur->exec_file){ 
   file_allow_write(cur->exec_file);
-  close_all_files(&cur->fd_map_list);
   file_close(cur->exec_file);
+  }
+  close_all_files(&cur->fd_map_list);
   free_children(cur);
   
   if(p){
@@ -422,9 +445,13 @@ load (const char *file_name, void (**eip) (void), void **esp)
   if(success){
   t->exec_file = file;
   file_deny_write(file);
+  
+  t->p->load_statu = LOAD_SUCCES;
   }else{
+  t->p->load_statu = LOAD_FAIL;
   file_close (file);
   }
+  sema_up(&t->p->load);
   return success;
 }
 
