@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -190,6 +191,9 @@ thread_create (const char *name, int priority,
   lock_release(&t->parent->child_list_lock);
   t->p->pid = tid;
   sema_init(&t->p->wait,0);
+  sema_init(&t->p->load,0);
+  t->p->load_statu = LOADING;
+  t->p->exit_code = -1;
   t->p->waiting = false;
   t->p->t = t;
 #endif
@@ -476,6 +480,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  t->exit_code = -1;
 #ifdef USERPROG
   list_init(&t->child_list);
   lock_init(&t->child_list_lock);

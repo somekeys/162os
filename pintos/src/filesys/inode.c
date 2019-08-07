@@ -87,9 +87,12 @@ inode_create (block_sector_t sector, off_t length)
       size_t sectors = bytes_to_sectors (length);
       disk_inode->length = length;
       disk_inode->magic = INODE_MAGIC;
+      //find consecutive sectors larger or equal to length
       if (free_map_allocate (sectors, &disk_inode->start))
         {
+            //place innode in sector allocated before
           block_write (fs_device, sector, disk_inode);
+          // zeros all allocated sectors in innode
           if (sectors > 0)
             {
               static char zeros[BLOCK_SECTOR_SIZE];
