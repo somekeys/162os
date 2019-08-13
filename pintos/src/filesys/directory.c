@@ -234,3 +234,28 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
     }
   return false;
 }
+
+static int
+get_next_part (char part[NAME_MAX + 1], const char **srcp) {
+    const char *src = *srcp;
+    char *dst = part;
+/* Skip leading slashes */
+    while (*src == '/')
+        src++;
+    if (*src == '\0')
+        return 0;
+/*it's all slashes, we're done. */
+/* Copy up to NAME_MAX character from SRC to DST*/
+    while (*src != '/' && *src != '\0') {
+        if (dst < part + NAME_MAX)
+            *dst++ = *src;
+        else
+            return -1;
+        src++;
+    }
+    /*Add null terminator. */
+    *dst = '\0';
+    /* Advance source pointer. */
+    *srcp = src;
+    return 1;
+    }
