@@ -52,7 +52,9 @@ struct block *block_next (struct block *);
 /* Block device operations. */
 block_sector_t block_size (struct block *);
 void block_read (struct block *, block_sector_t, void *);
+void block_read_ (struct block *, block_sector_t, void *);
 void block_write (struct block *, block_sector_t, const void *);
+void block_write_ (struct block *, block_sector_t, const void *);
 const char *block_name (struct block *);
 enum block_type block_type (struct block *);
 

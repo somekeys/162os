@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include "devices/ide.h"
 #include "threads/malloc.h"
+#include "filesys/filesys.h"
+#include "filesys/cache.h"
 
 /* A block device. */
 struct block
@@ -120,11 +122,22 @@ check_sector (struct block *block, block_sector_t sector)
 void
 block_read (struct block *block, block_sector_t sector, void *buffer)
 {
+  if(block == fs_device){
+      cache_get(sector,buffer);
+  }else{
+  check_sector (block, sector);
+  block->ops->read (block->aux, sector, buffer);
+  block->read_cnt++;
+  }
+}
+
+    void
+block_read_ (struct block *block, block_sector_t sector, void *buffer)
+{
   check_sector (block, sector);
   block->ops->read (block->aux, sector, buffer);
   block->read_cnt++;
 }
-
 /* Write sector SECTOR to BLOCK from BUFFER, which must contain
    BLOCK_SECTOR_SIZE bytes.  Returns after the block device has
    acknowledged receiving the data.
@@ -133,12 +146,24 @@ block_read (struct block *block, block_sector_t sector, void *buffer)
 void
 block_write (struct block *block, block_sector_t sector, const void *buffer)
 {
+  if(block == fs_device){
+      cache_write(sector,0,BLOCK_SECTOR_SIZE,(void *)buffer);
+  }else{
+  check_sector (block, sector);
+  ASSERT (block->type != BLOCK_FOREIGN);
+  block->ops->write (block->aux, sector, buffer);
+  block->write_cnt++;
+  }
+}
+
+    void
+block_write_ (struct block *block, block_sector_t sector, const void *buffer)
+{
   check_sector (block, sector);
   ASSERT (block->type != BLOCK_FOREIGN);
   block->ops->write (block->aux, sector, buffer);
   block->write_cnt++;
 }
-
 /* Returns the number of sectors in BLOCK. */
 block_sector_t
 block_size (struct block *block)
