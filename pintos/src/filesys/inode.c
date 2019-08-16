@@ -28,7 +28,7 @@ struct inode_disk
     block_sector_t start[TOTAL_PNUM];               /* First data sector. */
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
-    uint32_t unused[125- TOTAL_PNUM];               /* Not used. */
+    uint32_t unused[125- TOTAL_PNUM+1];               /* Not used. */
   };
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -66,7 +66,7 @@ byte_to_sector (const struct inode *inode, off_t pos)
         return inode->data.start[sec_idx/PER_DIRECT];
     }else if ( (sec_idx -= DIRECT_SIZE) < INDIRECT_SIZE ){
         cache_get(inode->data.start[DIRECT_NUM + sec_idx/PER_INDIRECT],buffer);
-        return buffer[sec_idx%BLOCK_SECTOR_SIZE];
+        return buffer[sec_idx%PER_INDIRECT];
     }else{
         sec_idx -= INDIRECT_SIZE;
         cache_get(inode->data.start[INDIRECT_NUM + DIRECT_NUM +sec_idx/PER_D_INDIRECT],buffer);
@@ -89,6 +89,7 @@ static bool  expand_inode(struct inode_disk *disk_inode, size_t expan_size){
                            -sector_ptr;
     block_sector_t buffer[BLOCK_SECTOR_SIZE/sizeof(block_sector_t)];
     static uint8_t zeros [BLOCK_SECTOR_SIZE];
+    block_sector_t t[1];
    
     while(sectors_expan > 0 && sector_ptr < DIRECT_SIZE){
         if(!free_map_allocate(1, disk_inode->start + sector_ptr)) return false;
@@ -98,20 +99,97 @@ static bool  expand_inode(struct inode_disk *disk_inode, size_t expan_size){
     }
 
     while(sectors_expan > 0 && sector_ptr < DIRECT_SIZE + INDIRECT_SIZE){
+        // pos of indirect block among indirect blocks
+        int indir_off = (sector_ptr-DIRECT_SIZE)/PER_INDIRECT;
+        //pos of dirct block inside the indirect block
+        int dir_off = (sector_ptr - DIRECT_SIZE)%PER_INDIRECT;
+        
+        //if it is the start of a new indirect block
+        if(dir_off == 0){
+            //allocate that block
+            if(!free_map_allocate(1, disk_inode->start + DIRECT_NUM + indir_off))\
+                return false;
+        }
+        
+        // read the indirect block from disk_inode
+        cache_get(disk_inode->start[indir_off + DIRECT_NUM], buffer);
+        
+        // get a new sector and fill it with zeros
+        if(!free_map_allocate(1, t)) return false;
+        cache_write(*t,0,BLOCK_SECTOR_SIZE,zeros);
+        
+        //write the sector into the indirect block 
+        cache_write(disk_inode->start[DIRECT_NUM+ indir_off],dir_off * sizeof(block_sector_t),\
+                    sizeof(block_sector_t), t);
+
+        sectors_expan --;
+        sector_ptr ++;
+    }
+
+    while(sectors_expan > 0 && sector_ptr < DIRECT_SIZE + INDIRECT_SIZE + \
+            D_INDIRECT_SIZE){
+         
+        int d_indir_off = (sector_ptr - DIRECT_SIZE - INDIRECT_SIZE)\
+                        /PER_D_INDIRECT;
+        int indir_off = ((sector_ptr - DIRECT_SIZE - INDIRECT_SIZE) % \
+                        PER_D_INDIRECT) / PER_INDIRECT;
+        int dir_off = ((sector_ptr - D_INDIRECT_SIZE - INDIRECT_SIZE)% \
+                        PER_D_INDIRECT) % PER_INDIRECT;
+        
+        // if it is the start of a double_indirect block 
+        if(indir_off == 0){
+            //allocate the d_indirect block
+            if(!free_map_allocate(1, disk_inode->start + DIRECT_NUM +\
+                INDIRECT_NUM + d_indir_off)) return false;
+        }
+       
+        // read the d_indirect blcok into the cache 
+        cache_get(disk_inode->start[DIRECT_NUM + INDIRECT_NUM + d_indir_off], buffer);
+        
+        //if it is the start of a indirect block 
+        if(dir_off == 0) {
+            if(!free_map_allocate(1, t)) return false;
+            // write the allocated indirect sector into the double_indirect block
+            cache_write(disk_inode-> start[DIRECT_NUM+ INDIRECT_NUM+ d_indir_off],indir_off * sizeof(block_sector_t),\
+                    sizeof(block_sector_t),t);
+                }
+        
+        if(!free_map_allocate(1, t)) return false;
+        cache_write(*t,0,BLOCK_SECTOR_SIZE,zeros);
+        //write the allocated direct_block into the indirect_block
+        cache_write(buffer[indir_off],dir_off * sizeof(block_sector_t) ,sizeof(block_sector_t),t);
+        
+        sectors_expan --;
+        sector_ptr ++;
+
+    }
+
+   disk_inode->length += expan_size; 
+   return true;
+}
+
+static void  release_inode(struct inode_disk *disk_inode){
+    //struct inode_disk* disk_inode = &inode->data;
+    int sector_ptr =  0; 
+    size_t sectors_expan = bytes_to_sectors(disk_inode ->length);
+    block_sector_t buffer[BLOCK_SECTOR_SIZE/sizeof(block_sector_t)];
+   
+    while(sectors_expan > 0 && sector_ptr < DIRECT_SIZE){
+        free_map_release(disk_inode-> start[sector_ptr], 1);
+        sectors_expan --;
+        sector_ptr++;
+    }
+
+    while(sectors_expan > 0 && sector_ptr < DIRECT_SIZE + INDIRECT_SIZE){
         int indir_off = (sector_ptr-DIRECT_SIZE)/PER_INDIRECT;
         int dir_off = (sector_ptr - DIRECT_SIZE)%PER_INDIRECT;
         
-        if(dir_off == 0){
-            if(free_map_allocate(1, disk_inode->start + sector_ptr+ indir_off))\
-                return false;
-        }
         cache_get(disk_inode->start[sector_ptr+ indir_off], buffer);
-        if(!free_map_allocate(1, buffer+ dir_off)) return false;
-        cache_write(buffer[dir_off],0,BLOCK_SECTOR_SIZE,zeros);
+        free_map_release(buffer[dir_off],1);
         
-        if(dir_off == BLOCK_SECTOR_SIZE/sizeof(block_sector_t) -1){
-            cache_write(disk_inode->start[sector_ptr+ indir_off],0,\
-                    BLOCK_SECTOR_SIZE, buffer);
+        
+        if(dir_off == BLOCK_SECTOR_SIZE/sizeof(block_sector_t) -1|| sectors_expan == 1){
+            free_map_release(disk_inode->start[sector_ptr+ indir_off], 1);
         }
 
         sectors_expan --;
@@ -128,27 +206,32 @@ static bool  expand_inode(struct inode_disk *disk_inode, size_t expan_size){
         int dir_off = ((sector_ptr - D_INDIRECT_SIZE - INDIRECT_SIZE)% \
                         PER_D_INDIRECT) % PER_INDIRECT;
         block_sector_t t[1];
-        if(indir_off == 0) free_map_allocate(1, disk_inode->start + sector_ptr+\
-                d_indir_off);
-        
-        if(dir_off == 0) {
-            if(!free_map_allocate(1, t)) return false;
-            cache_write(disk_inode-> start[sector_ptr + d_indir_off],indir_off,\
-                    sizeof(block_sector_t),t);
-                }
+        //read the d_indirect blcok into the buffer
         cache_get(disk_inode->start[sector_ptr+ d_indir_off], buffer);
-        if(!free_map_allocate(1, t)) return false;
-        cache_write(*t,0,BLOCK_SECTOR_SIZE,zeros);
-        cache_write(buffer[indir_off],dir_off,sizeof(block_sector_t),t);
+        //get the indirect blcok from buffer
+        t[0] = buffer[indir_off];
+        //read the indir_block into the buffer
+        cache_get(t[0],buffer);
+        //release the direct block 
+        free_map_release(buffer[dir_off],1);
+        // last blcok in a indirect block
+        if(dir_off == PER_INDIRECT -1 || sectors_expan == 1){
+            // release the indirect blcok
+            free_map_release(t[0], 1);
+
+            //if the indirect blcok is the last one in the d_indirect blcok
+            if(indir_off == PER_D_INDIRECT/PER_INDIRECT -1 || sectors_expan == 1){
+                free_map_release(disk_inode->start[sector_ptr + d_indir_off], 1);
+            }
+        }
         
         sectors_expan --;
         sector_ptr ++;
 
     }
 
-   disk_inode->length += expan_size; 
-   return true;
 }
+
 
 /* Initializes the inode module. */
 void
@@ -178,7 +261,7 @@ inode_create (block_sector_t sector, off_t length)
   if (disk_inode != NULL)
     {
       //size_t sectors = bytes_to_sectors (length);
-      disk_inode->length = length;
+      disk_inode->length = 0;
       disk_inode->magic = INODE_MAGIC;
       //find consecutive sectors larger or equal to length
       if (expand_inode(disk_inode,length))
@@ -276,8 +359,9 @@ inode_close (struct inode *inode)
       if (inode->removed)
         {
           free_map_release (inode->sector, 1);
-          free_map_release (inode->data.start,
-                            bytes_to_sectors (inode->data.length));
+          release_inode(&inode->data);
+         // free_map_release (inode->data.start,
+           //                 bytes_to_sectors (inode->data.length));
         }
 
       free (inode);

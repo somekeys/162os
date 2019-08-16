@@ -2,22 +2,24 @@
 #include "lib/string.h"
 #include "filesys/filesys.h"
 #define CACHE_SIZE 64
-static struct ca_entry cache_table [CACHE_SIZE] = {{0,0,-1,{0}}};
+static struct ca_entry cache_table [CACHE_SIZE] ;
 static int  pf_handler(block_sector_t s);
 
 /* Search in the cache table for the sector C
  * and return the cache entry index
  * call pf_handler on cache miss*/
-static int inline look_up(block_sector_t s){
+inline static int look_up(block_sector_t s){
     int i;
     for(i=0;i<CACHE_SIZE;i++){
-       if(cache_table[i].id == s){
+       if(cache_table[i].id == s && cache_table[i].valid){
            break;
        }
     }
-   
+
+    
     i = i == CACHE_SIZE? pf_handler(s):i ; 
-    return i;
+    
+       return i;
 }
 
 /* Find given block S in the cache and copy it into the BUFFER
@@ -72,18 +74,22 @@ static int  pf_handler(block_sector_t s){
         ptr++;
         ptr = ptr % CACHE_SIZE;
     }
-    struct ca_entry cn = cache_table[ptr];
+    struct ca_entry* cn = cache_table+ptr;
     
-    if(cn.dirty){
-        block_write_(fs_device,cn.id, cn.data);
+    if(cn -> dirty){
+        block_write_(fs_device,cn -> id, cn -> data);
     }
     
-    block_read_ (fs_device,s, cn.data);
-    cn.use = true;
-    cn.dirty= false;
-    cn.id = s;
+    block_read_ (fs_device,s, cn -> data);
+    cn -> use = true;
+    cn -> dirty= false;
+    cn -> id = s;
+    cn -> valid = true;
     
-    return ptr;
+    int rt = ptr;
+    ptr++;
+    ptr = ptr % CACHE_SIZE;
+    return rt;
 }
 
 void cache_sync(void){

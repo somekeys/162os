@@ -5,6 +5,7 @@
 struct ca_entry{
     bool use;
     bool dirty;
+    bool valid;
     block_sector_t id;
     uint8_t data[BLOCK_SECTOR_SIZE];
 };
