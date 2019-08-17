@@ -4,6 +4,7 @@
 #include <round.h>
 #include <string.h>
 #include "filesys/filesys.h"
+#include "threads/synch.h"
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
 #include "filesys/cache.h"
@@ -48,6 +49,7 @@ struct inode
     bool removed;                       /* True if deleted, false otherwise. */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
     struct inode_disk data;             /* Inode content. */
+    struct lock lock;
   };
 
 /* Returns the block device sector that contains byte offset POS
@@ -320,6 +322,7 @@ inode_open (block_sector_t sector)
   inode->deny_write_cnt = 0;
   inode->removed = false;
   block_read (fs_device, inode->sector, &inode->data);
+  lock_init(&inode->lock);
   return inode;
 }
 
@@ -373,8 +376,10 @@ inode_close (struct inode *inode)
 void
 inode_remove (struct inode *inode)
 {
+    lock_acquire(&inode->lock);
   ASSERT (inode != NULL);
   inode->removed = true;
+  lock_release(&inode -> lock);
 }
 
 /* Reads SIZE bytes from INODE into BUFFER, starting at position OFFSET.
@@ -383,6 +388,7 @@ inode_remove (struct inode *inode)
 off_t
 inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
 {
+    lock_acquire(&inode -> lock);
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
   uint8_t *bounce = NULL;
@@ -428,7 +434,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       bytes_read += chunk_size;
     }
   free (bounce);
-
+  lock_release(&inode->lock);
   return bytes_read;
 }
 
@@ -441,6 +447,7 @@ off_t
 inode_write_at (struct inode *inode, const void *buffer_, off_t size,
                 off_t offset)
 {
+    lock_acquire(&inode->lock);
   const uint8_t *buffer = buffer_;
   off_t bytes_written = 0;
  // uint8_t *bounce = NULL;
@@ -499,6 +506,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       bytes_written += chunk_size;
     }
   //free (bounce);
+    lock_release(&inode->lock);
 
   return bytes_written;
 }
@@ -508,8 +516,10 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 void
 inode_deny_write (struct inode *inode)
 {
+  lock_acquire(&inode -> lock);
   inode->deny_write_cnt++;
   ASSERT (inode->deny_write_cnt <= inode->open_cnt);
+  lock_release(&inode -> lock);
 }
 
 /* Re-enables writes to INODE.
@@ -518,9 +528,11 @@ inode_deny_write (struct inode *inode)
 void
 inode_allow_write (struct inode *inode)
 {
+  lock_acquire(&inode -> lock);
   ASSERT (inode->deny_write_cnt > 0);
   ASSERT (inode->deny_write_cnt <= inode->open_cnt);
   inode->deny_write_cnt--;
+  lock_release(&inode -> lock);
 }
 
 /* Returns the length, in bytes, of INODE's data. */
