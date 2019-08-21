@@ -2,6 +2,7 @@
 #include <debug.h>
 #include "filesys/inode.h"
 #include "threads/malloc.h"
+#include "filesys/directory.h"
 
 /* An open file. */
 struct file
@@ -33,6 +34,21 @@ file_open (struct inode *inode)
     }
 }
 
+bool file_is_dir(struct file* f){
+    return inode_is_dir(f->inode);
+}
+
+int file_get_inumber(struct file* f){
+    return inode_get_inumber(f->inode);
+}
+
+bool file_readdir(struct file* f, char* name){
+    if(!inode_is_dir(f->inode)) return false;
+    struct dir* d = dir_open(f->inode);
+    bool sucess = dir_readdir(d, name);
+    free(d);
+    return sucess;
+}
 /* Opens and returns a new file for the same inode as FILE.
    Returns a null pointer if unsuccessful. */
 struct file *

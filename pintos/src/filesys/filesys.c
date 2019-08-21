@@ -7,6 +7,7 @@
 #include "filesys/inode.h"
 #include "filesys/directory.h"
 #include "filesys/cache.h"
+#include "threads/thread.h"
 
 /* Partition that contains the file system. */
 struct block *fs_device;
@@ -48,12 +49,17 @@ bool
 filesys_create (const char *name, off_t initial_size)
 {
   block_sector_t inode_sector = 0;
-  struct dir *dir = dir_open_root ();
+  char file_name[NAME_MAX+1];
+  block_sector_t path_sector  = dir_parse_path((char*)name,file_name);  
+  struct dir *dir = dir_open(inode_open(path_sector));
+  if(!strcmp("..",file_name) || !strcmp(".", file_name)){
+      return false;
+  }
   bool success = (dir != NULL
                     //find a sector to palce inde
                   && free_map_allocate (1, &inode_sector)
                   && inode_create (inode_sector, initial_size)
-                  && dir_add (dir, name, inode_sector));
+                  && dir_add (dir, file_name, inode_sector));
   if (!success && inode_sector != 0)
     free_map_release (inode_sector, 1);
   dir_close (dir);
@@ -69,7 +75,12 @@ filesys_create (const char *name, off_t initial_size)
 struct file *
 filesys_open (const char *name)
 {
-  struct dir *dir = dir_open_root ();
+  char file_name[NAME_MAX+1];
+  block_sector_t path_sector  = dir_parse_path((char*)name,file_name);  
+  struct dir *dir = dir_open(inode_open(path_sector));
+  if(!strcmp("..",file_name) || !strcmp(".", file_name)){
+      dir = NULL;
+  }
   struct inode *inode = NULL;
 
   if (dir != NULL)
@@ -86,7 +97,13 @@ filesys_open (const char *name)
 bool
 filesys_remove (const char *name)
 {
-  struct dir *dir = dir_open_root ();
+  char file_name[NAME_MAX+1];
+  block_sector_t path_sector  = dir_parse_path((char*)name,file_name);  
+  struct dir *dir = dir_open(inode_open(path_sector));
+  if(!strcmp("..",file_name) || !strcmp(".", file_name)){
+      return false;
+  }
+  
   bool success = dir != NULL && dir_remove (dir, name);
   dir_close (dir);
 
@@ -99,7 +116,7 @@ do_format (void)
 {
   printf ("Formatting file system...");
   free_map_create ();
-  if (!dir_create (ROOT_DIR_SECTOR, 16))
+  if (!dir_create (ROOT_DIR_SECTOR, 16,ROOT_DIR_SECTOR))
     PANIC ("root directory creation failed");
   free_map_close ();
   printf ("done.\n");

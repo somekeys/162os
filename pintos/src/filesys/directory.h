@@ -14,11 +14,12 @@
 struct inode;
 
 /* Opening and closing directories. */
-bool dir_create (block_sector_t sector, size_t entry_cnt);
+bool dir_create (block_sector_t sector, size_t entry_cnt, block_sector_t parent);
 struct dir *dir_open (struct inode *);
 struct dir *dir_open_root (void);
 struct dir *dir_reopen (struct dir *);
 void dir_close (struct dir *);
+block_sector_t dir_parse_path(char* name,char file_name[NAME_MAX+1]);
 struct inode *dir_get_inode (struct dir *);
 
 /* Reading and writing. */

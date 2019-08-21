@@ -14,6 +14,7 @@ struct ca_entry{
  * Read the block from disk to cache ,if the block is not in 
  * the cache
  */
+void cache_init(void);
 void cache_get(block_sector_t s, void* buffer);
 void cache_sync(void);
 

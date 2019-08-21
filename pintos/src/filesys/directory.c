@@ -5,6 +5,9 @@
 #include "filesys/filesys.h"
 #include "filesys/inode.h"
 #include "threads/malloc.h"
+#include "threads/thread.h"
+static int get_next_part (char part[NAME_MAX + 1], const char **srcp);
+static bool check_next_part(char* name);
 
 /* A directory. */
 struct dir
@@ -24,9 +27,9 @@ struct dir_entry
 /* Creates a directory with space for ENTRY_CNT entries in the
    given SECTOR.  Returns true if successful, false on failure. */
 bool
-dir_create (block_sector_t sector, size_t entry_cnt)
+dir_create (block_sector_t sector, size_t entry_cnt, block_sector_t parent)
 {
-  return inode_create (sector, entry_cnt * sizeof (struct dir_entry));
+  return inode_dir_create (sector, entry_cnt * sizeof (struct dir_entry), parent);
 }
 
 /* Opens and returns the directory for the given INODE, of which
@@ -47,6 +50,58 @@ dir_open (struct inode *inode)
       free (dir);
       return NULL;
     }
+}
+
+block_sector_t 
+dir_parse_path(char* name,char file_name[NAME_MAX+1]){
+    block_sector_t dir_sec;
+    struct inode* in;
+
+    //determine the path is a relative or absolute path
+    if(*name == '/'){
+        dir_sec = ROOT_DIR_SECTOR;
+    }else{
+        struct thread *t = thread_current();
+        dir_sec = t->wd;
+    }
+    file_name[0]  = '\0';
+
+    while(get_next_part(file_name,(const char **) &name)){
+        //if it is the last name 
+        if(!check_next_part(name)){
+            break;
+        }
+
+        //if it is .., and not the last one 
+        if(!strcmp("..",file_name)){
+            in = inode_open(dir_sec);
+            if(!in) return false;
+            dir_sec = inode_get_parent(in);
+            inode_close(in);
+        }else if(!strcmp(".", file_name)){
+            //do nothing
+        }else{
+            if(!dir_lookup(dir_open(inode_open(dir_sec)), file_name,&in)){
+//                printf("FILE NOT EXITS: %s\n", file_name);
+                return NULL;
+            }
+
+            dir_sec = inode_get_inumber(in);   
+            inode_close(in);
+        }
+        
+    }
+
+    return dir_sec;
+    
+    
+    
+}
+// return true if there is next part in name 
+static bool
+check_next_part(char* name){
+    char file_name[NAME_MAX+1];
+    return get_next_part(file_name,(const char **) &name);
 }
 
 /* Opens the root directory and returns a directory for it.
@@ -240,17 +295,22 @@ get_next_part (char part[NAME_MAX + 1], const char **srcp) {
     const char *src = *srcp;
     char *dst = part;
 /* Skip leading slashes */
-    while (*src == '/')
+    while (*src == '/'){
         src++;
-    if (*src == '\0')
+    }
+
+    if (*src == '\0'){
         return 0;
+    }
+
 /*it's all slashes, we're done. */
 /* Copy up to NAME_MAX character from SRC to DST*/
     while (*src != '/' && *src != '\0') {
-        if (dst < part + NAME_MAX)
+        if (dst < part + NAME_MAX){
             *dst++ = *src;
-        else
+        }else{
             return -1;
+        }
         src++;
     }
     /*Add null terminator. */
@@ -258,4 +318,4 @@ get_next_part (char part[NAME_MAX + 1], const char **srcp) {
     /* Advance source pointer. */
     *srcp = src;
     return 1;
-    }
+}

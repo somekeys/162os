@@ -1,19 +1,30 @@
 #include "filesys/cache.h"
 #include "lib/string.h"
 #include "filesys/filesys.h"
+#include "threads/synch.h"
 #define CACHE_SIZE 64
 static struct ca_entry cache_table [CACHE_SIZE] ;
+static struct lock cache_locks [CACHE_SIZE] ;
 static int  pf_handler(block_sector_t s);
 
+void cache_init(){
+    int i;
+    for(i =0; i<CACHE_SIZE; i++){
+        lock_init(&cache_locks[i]);
+    }
+}
 /* Search in the cache table for the sector C
  * and return the cache entry index
- * call pf_handler on cache miss*/
+ * call pf_handler on cache miss.THE FUNC WILL REQUIRE A LOCK
+ * WHICH NEED TO BE RELEASED LATER*/
 inline static int look_up(block_sector_t s){
     int i;
     for(i=0;i<CACHE_SIZE;i++){
+       lock_acquire(&cache_locks[i]);
        if(cache_table[i].id == s && cache_table[i].valid){
            break;
        }
+       lock_release(&cache_locks[i]);
     }
 
     
@@ -35,6 +46,7 @@ void cache_get(block_sector_t s, void* buffer_){
    //generate a page fault if given sector not found
    memcpy(buffer, cache_table[i].data, BLOCK_SECTOR_SIZE);
    cache_table[i].use =true;
+   lock_release(&cache_locks[i]);
 
 }
 
@@ -50,6 +62,7 @@ off_t  cache_write (block_sector_t s, off_t off, off_t size, void* buffer_){
     memcpy(cache_table[i].data + off, buffer,size);
     cache_table[i].dirty = true;
     cache_table[i].use = true;
+    lock_release(&cache_locks[i]);
 
     return size;
 
@@ -74,8 +87,9 @@ static int  pf_handler(block_sector_t s){
         ptr++;
         ptr = ptr % CACHE_SIZE;
     }
+
     struct ca_entry* cn = cache_table+ptr;
-    
+    lock_acquire(&cache_locks[ptr]);
     if(cn -> dirty){
         block_write_(fs_device,cn -> id, cn -> data);
     }
@@ -97,12 +111,14 @@ void cache_sync(void){
     int i;
     
     for(i = 0;  i<CACHE_SIZE; i++){
+        lock_acquire(&cache_locks[i]);
         c_entry = cache_table[i];
         
         if(c_entry.dirty){
             block_write_(fs_device,c_entry.id, c_entry.data);
             c_entry.dirty =false;
         }
+        lock_release(&cache_locks[i]);
     }
 }
 
