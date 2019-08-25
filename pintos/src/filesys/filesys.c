@@ -51,6 +51,8 @@ filesys_create (const char *name, off_t initial_size)
   block_sector_t inode_sector = 0;
   char file_name[NAME_MAX+1];
   block_sector_t path_sector  = dir_parse_path((char*)name,file_name);  
+
+  if(path_sector== SECTOR_ERROR) return false;
   struct dir *dir = dir_open(inode_open(path_sector));
   if(!strcmp("..",file_name) || !strcmp(".", file_name)){
       return false;
@@ -75,16 +77,35 @@ filesys_create (const char *name, off_t initial_size)
 struct file *
 filesys_open (const char *name)
 {
+  struct inode *inode = NULL;
   char file_name[NAME_MAX+1];
+  if(*name=='\0'){
+      return NULL;
+  }
   block_sector_t path_sector  = dir_parse_path((char*)name,file_name);  
+  if(path_sector== SECTOR_ERROR) return NULL;
+  
+  if(!path_sector){
+      return NULL;
+  }
+  
+  if(*file_name=='\0'){
+      return file_open(inode_open(path_sector));
+  }
   struct dir *dir = dir_open(inode_open(path_sector));
-  if(!strcmp("..",file_name) || !strcmp(".", file_name)){
+  
+  if(!strcmp("..",file_name)){
+      inode = inode_open(inode_get_parent(dir_get_inode(dir)));
+      dir_close(dir);
+      dir = NULL;
+  }else if(!strcmp(".", file_name)){
+      inode = inode_open(path_sector);
+      dir_close(dir);
       dir = NULL;
   }
-  struct inode *inode = NULL;
 
   if (dir != NULL)
-    dir_lookup (dir, name, &inode);
+    dir_lookup (dir, file_name, &inode);
   dir_close (dir);
 
   return file_open (inode);
@@ -99,12 +120,15 @@ filesys_remove (const char *name)
 {
   char file_name[NAME_MAX+1];
   block_sector_t path_sector  = dir_parse_path((char*)name,file_name);  
+  if(path_sector== SECTOR_ERROR) return false;
   struct dir *dir = dir_open(inode_open(path_sector));
-  if(!strcmp("..",file_name) || !strcmp(".", file_name)){
+  if(!strcmp("..",file_name)){
+      return false;
+  }else if(!strcmp(".", file_name)){
       return false;
   }
   
-  bool success = dir != NULL && dir_remove (dir, name);
+  bool success = dir != NULL && dir_remove (dir, file_name);
   dir_close (dir);
 
   return success;
@@ -116,7 +140,7 @@ do_format (void)
 {
   printf ("Formatting file system...");
   free_map_create ();
-  if (!dir_create (ROOT_DIR_SECTOR, 16,ROOT_DIR_SECTOR))
+  if (!dir_create (ROOT_DIR_SECTOR, 0,ROOT_DIR_SECTOR))
     PANIC ("root directory creation failed");
   free_map_close ();
   printf ("done.\n");

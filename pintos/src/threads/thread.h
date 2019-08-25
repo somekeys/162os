@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "threads/synch.h"
 #include "threads/fixed-point.h"
+#include "devices/block.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -106,6 +107,7 @@ struct thread
 #endif
     struct list fd_map_list;
     int exit_code;
+    block_sector_t wd;
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };

@@ -37,6 +37,7 @@ free_map_allocate (size_t cnt, block_sector_t *sectorp)
     }
   if (sector != BITMAP_ERROR)
     *sectorp = sector;
+//  ASSERT( sector != BITMAP_ERROR);
   return sector != BITMAP_ERROR;
 }
 

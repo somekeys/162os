@@ -8,6 +8,7 @@
 struct file
   {
     struct inode *inode;        /* File's inode. */
+    struct dir *dir;
     off_t pos;                  /* Current position. */
     bool deny_write;            /* Has file_deny_write() been called? */
   };
@@ -22,6 +23,9 @@ file_open (struct inode *inode)
   if (inode != NULL && file != NULL)
     {
       file->inode = inode;
+      if(inode_is_dir(inode)){
+      file->dir = dir_open(inode);
+      }
       file->pos = 0;
       file->deny_write = false;
       return file;
@@ -44,9 +48,9 @@ int file_get_inumber(struct file* f){
 
 bool file_readdir(struct file* f, char* name){
     if(!inode_is_dir(f->inode)) return false;
-    struct dir* d = dir_open(f->inode);
-    bool sucess = dir_readdir(d, name);
-    free(d);
+    //struct dir* d = dir_open(f->inode);
+    bool sucess = dir_readdir(f->dir, name);
+    //dir_close(d);
     return sucess;
 }
 /* Opens and returns a new file for the same inode as FILE.
@@ -64,7 +68,11 @@ file_close (struct file *file)
   if (file != NULL)
     {
       file_allow_write (file);
-      inode_close (file->inode);
+      if(inode_is_dir(file->inode)){
+            dir_close(file->dir);
+       }else{
+            inode_close (file->inode);
+       }
       free (file);
     }
 }

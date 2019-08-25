@@ -12,6 +12,7 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
+#include "filesys/filesys.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -97,6 +98,7 @@ thread_init (void)
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
+  initial_thread->wd = ROOT_DIR_SECTOR;
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
 }
@@ -185,6 +187,7 @@ thread_create (const char *name, int priority,
   tid = t->tid = allocate_tid ();
 #ifdef USERPROG 
   t->parent = running_thread();
+  t->wd = t->parent->wd;
   t->p = malloc(sizeof(struct process));
   lock_acquire(&t->parent->child_list_lock);
   list_push_back(&t->parent->child_list, &t->p->elem);

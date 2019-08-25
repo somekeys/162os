@@ -246,6 +246,8 @@ dir_remove (struct dir *dir, const char *name)
 
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
+  if(!strcmp("/", name))
+      goto done;
 
   /* Find directory entry. */
   if (!lookup (dir, name, &e, &ofs))
@@ -255,6 +257,21 @@ dir_remove (struct dir *dir, const char *name)
   inode = inode_open (e.inode_sector);
   if (inode == NULL)
     goto done;
+
+  if(inode_is_dir(inode)){
+    if(inode_get_inumber(inode) == thread_current()->wd){
+        thread_current()->wd = SECTOR_ERROR;
+    };
+    char name_[NAME_MAX];
+    struct dir* di;
+    di = dir_open(inode);
+    
+    if(dir_readdir(di,name_)){
+        free(di);
+        goto done;
+    }
+  
+  }
 
   /* Erase directory entry. */
   e.in_use = false;

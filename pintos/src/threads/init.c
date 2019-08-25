@@ -20,6 +20,7 @@
 #include "threads/loader.h"
 #include "threads/malloc.h"
 #include "threads/palloc.h"
+#include "filesys/cache.h"
 #include "threads/pte.h"
 #include "threads/thread.h"
 #ifdef USERPROG
@@ -122,11 +123,11 @@ main (void)
 
 #ifdef FILESYS
   /* Initialize file system. */
+  cache_init();
   ide_init ();
   locate_block_devices ();
   filesys_init (format_filesys);
 #endif
-
   printf ("Boot complete.\n");
 
   /* Run actions specified on kernel command line. */
